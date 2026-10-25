@@ -1,7 +1,7 @@
 node_modules/
 dist/
 .env
-.chord-state.json
+.chord-state*.json
 docs/setup-log/
 
 # Working docs stay local. Only these documents are published.

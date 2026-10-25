@@ -246,7 +246,7 @@ create table if not exists owner_sessions (
 create table if not exists inventory_changes (
   id                 text primary key,
   sku                text not null references products(sku),
-  op                 text not null check (op in ('increment', 'set', 'price', 'sold_out', 'discontinue')),
+  op                 text not null check (op in ('increment', 'set', 'price', 'sold_out', 'discontinue', 'reactivate', 'add')),
   value              numeric,
   before_qty         int not null,
   after_qty          int not null,
@@ -285,6 +285,9 @@ alter table orders        add column if not exists delivery_attempts int not nul
 alter table orders        add column if not exists next_delivery_at  timestamptz;
 alter table payments      add column if not exists last_checked_at   timestamptz;
 alter table notifications add column if not exists submitted_at      timestamptz;
+-- Owner audit ops: 'reactivate' (sell a discontinued product again) and 'add' (new product by chat).
+alter table inventory_changes drop constraint if exists inventory_changes_op_check;
+alter table inventory_changes add constraint inventory_changes_op_check check (op in ('increment', 'set', 'price', 'sold_out', 'discontinue', 'reactivate', 'add'));
 
 -- One open waitlist entry per customer, product and date (after the upgrades above add for_date).
 create unique index if not exists opportunities_one_open_v2

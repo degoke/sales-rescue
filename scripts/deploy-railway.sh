@@ -12,7 +12,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SERVICE="sales-rescue"
-PROJECT="sales-rescue"
+# The Railway project to deploy into. Override it, for example: RAILWAY_PROJECT=dev pnpm deploy:railway
+PROJECT="${RAILWAY_PROJECT:-sales-rescue}"
 PORT="8787"
 SECRETS=(MCP_TOKEN OWNER_PIN LOGISTICS_API_KEY PAYSTACK_SECRET_KEY CHORD_API_KEY CHORD_WORKSPACE_ID CHORD_TEAMMATE_ID)
 
@@ -31,14 +32,15 @@ say "Linking the Railway project"
 # Always link this folder to the "$PROJECT" project by name. Never trust an existing link: the
 # Railway CLI also applies links from parent folders (for example a link on your home folder), and
 # `railway config apply` deletes every resource in the linked project that railway.ts does not list.
+# Match top-level projects only, so a service or environment with the same name is never used.
 project_id="$(railway list --json | node -e '
   let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
-    const found = [];
-    const walk = (v) => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") {
-      if (v.name === process.argv[1] && typeof v.id === "string") found.push(v.id); Object.values(v).forEach(walk); } };
-    walk(JSON.parse(s || "[]"));
-    process.stdout.write(found[0] ?? "");
+    const j = JSON.parse(s || "[]");
+    const projects = Array.isArray(j) ? j : (j.projects ?? []);
+    const ids = projects.filter((p) => p && p.name === process.argv[1] && typeof p.id === "string").map((p) => p.id);
+    process.stdout.write(ids.length > 1 ? "AMBIGUOUS" : (ids[0] ?? ""));
   });' "$PROJECT")"
+[ "$project_id" != "AMBIGUOUS" ] || die "More than one Railway project is named \"$PROJECT\". Set RAILWAY_PROJECT to a unique name."
 if [ -n "$project_id" ]; then railway link --project "$project_id"; else railway init --name "$PROJECT"; fi
 
 linked="$(railway status --json | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>process.stdout.write(JSON.parse(s).name ?? ""))')"
@@ -48,10 +50,12 @@ railway status
 say "Applying .railway/railway.ts (Postgres, $SERVICE, variables)"
 plan="$(railway config plan 2>&1)" || { echo "$plan"; die "railway config plan failed"; }
 echo "$plan"
-# Refuse to delete anything. A delete means the project holds resources that railway.ts does not list.
-destroy="$(printf '%s\n' "$plan" | grep -oE '[0-9]+ to destroy' | grep -oE '^[0-9]+' || true)"
-if [ -n "$destroy" ] && [ "$destroy" != "0" ]; then
-  die "The plan deletes $destroy resource(s) in \"$linked\". Stopped before any change."
+# Refuse to delete anything, and fail closed: apply only when the plan says plainly that it deletes nothing.
+if printf '%s\n' "$plan" | grep -qiE '^[[:space:]]*-[[:space:]]*(delete|remove|destroy)\b'; then
+  die "The plan deletes resources in \"$linked\". Stopped before any change."
+fi
+if ! printf '%s\n' "$plan" | grep -qE '(^|[^0-9])0 to destroy' && ! printf '%s\n' "$plan" | grep -qi 'no changes'; then
+  die "Could not confirm that the plan deletes nothing in \"$linked\". Stopped before any change."
 fi
 railway config apply --yes
 
@@ -74,10 +78,12 @@ say "Deploying the code"
 railway up --service "$SERVICE" --ci
 
 say "Health check"
+healthy=""
 for _ in $(seq 1 30); do
-  if curl -fsS "https://$domain/healthz" >/dev/null 2>&1; then echo "  ✓ https://$domain/healthz"; break; fi
+  if curl -fsS "https://$domain/healthz" >/dev/null 2>&1; then healthy=1; echo "  ✓ https://$domain/healthz"; break; fi
   sleep 5
 done
+[ -n "$healthy" ] || die "https://$domain/healthz did not answer after 150 seconds. Check: railway logs --service $SERVICE"
 
 cat <<EOF
 

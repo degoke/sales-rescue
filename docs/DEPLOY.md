@@ -28,11 +28,11 @@ pnpm deploy:railway
 The script [`scripts/deploy-railway.sh`](../scripts/deploy-railway.sh) does these steps. You can run it again safely.
 
 1. It checks the secrets in `.env` with the same rules that the service uses at startup.
-2. It links the `sales-rescue` project. If the project does not exist, it makes the project.
-3. It runs `railway config plan` and `railway config apply`. These commands make or update the database, the app service and the variables.
+2. It links the `sales-rescue` project. If the project does not exist, it makes the project. To use a project with a different name, set `RAILWAY_PROJECT`, for example `RAILWAY_PROJECT=dev pnpm deploy:railway`. The script stops if more than one project has that name.
+3. It runs `railway config plan` and `railway config apply`. These commands make or update the database, the app service and the variables. The script stops before `apply` if the plan deletes anything, or if it cannot confirm that the plan deletes nothing.
 4. It sets the secrets from `.env`: `MCP_TOKEN`, `OWNER_PIN`, `LOGISTICS_API_KEY`, `PAYSTACK_SECRET_KEY` and the `CHORD_*` variables.
 5. It makes the public `*.up.railway.app` domain on port 8787, one time only. Railway keeps generated domains outside the IaC file.
-6. It uploads and deploys the code with `railway up`. Then it waits until `/healthz` replies.
+6. It uploads and deploys the code with `railway up`. Then it waits until `/healthz` replies. If `/healthz` does not reply after 150 seconds, the script stops with an error.
 
 At the end, the script prints the URL of the service. Then do these two steps:
 

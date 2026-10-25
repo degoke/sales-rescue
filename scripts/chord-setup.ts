@@ -1,7 +1,9 @@
 // Creates or updates the Sales Rescue teammate on Chord. Safe to re-run: it reuses what exists,
 // republishes the skill only when skills/sales-rescue changed, and writes ids to .chord-state.json.
-//   pnpm chord:setup            create/update + activate
-//   pnpm chord:setup --pause    pause the teammate (stops replying)
+//   pnpm chord:setup            create/update + activate the production teammate
+//   pnpm chord:setup --dev      a separate dev teammate and MCP server (state in .chord-state.dev.json)
+//   pnpm chord:setup --pause    pause the teammate (stops replying); add --dev for the dev one
+//   pnpm chord:setup --move     allow the production MCP server to point at a new URL
 import { loadEnv } from '../src/config.js';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -13,13 +15,20 @@ const BASE = env.CHORD_BASE_URL;
 const KEY = env.CHORD_API_KEY;
 const PUBLIC = env.PUBLIC_BASE_URL;
 const MCP_TOKEN = env.MCP_TOKEN;
-const STATE = '.chord-state.json';
+const DEV = process.argv.includes('--dev');
+// The dev instance has its own state, MCP server, teammate and creation key, so it never reuses or
+// changes anything that belongs to the production teammate.
+const INSTANCE = DEV
+  ? { state: '.chord-state.dev.json', name: 'sales-rescue-dev', label: 'Flavorburst · Sales Rescue (dev)', lastName: 'Sales Rescue Dev' }
+  : { state: '.chord-state.json', name: 'sales-rescue', label: 'Flavorburst · Sales Rescue', lastName: 'Sales Rescue' };
+const STATE = INSTANCE.state;
 const LOG_DIR = 'docs/setup-log';
 const SKILL_DIR = 'skills/sales-rescue';
 
 type State = {
   workspaceId?: string;
   mcpServerId?: string;
+  mcpUrl?: string;
   teammateId?: string;
   teammateEmail?: string;
   skillId?: string;
@@ -80,7 +89,14 @@ save();
 
 // 2. MCP server: register disabled first. Chord's empty teammate assignment means "all servers"
 //    (it fails open), so the teammate gets an explicit list before the server is enabled.
-const mcpBody = { name: 'sales-rescue', url: `${PUBLIC}/mcp`, transport: 'streamable_http', auth_type: 'bearer', auth_token: MCP_TOKEN };
+// The production teammate must not move to another URL by accident (for example the tunnel URL in .env).
+if (!DEV && state.mcpUrl && state.mcpUrl !== `${PUBLIC}/mcp` && !process.argv.includes('--move')) {
+  console.error(
+    `The production MCP server points at ${state.mcpUrl}, not ${PUBLIC}/mcp. Use --dev for local testing, or --move to change it.`,
+  );
+  process.exit(1);
+}
+const mcpBody = { name: INSTANCE.name, url: `${PUBLIC}/mcp`, transport: 'streamable_http', auth_type: 'bearer', auth_token: MCP_TOKEN };
 if (!state.mcpServerId) {
   // Recover from a lost state file instead of registering a duplicate server.
   const list = (await chord('GET', `/v1/workspaces/${ws}/mcp-servers`)).json;
@@ -93,15 +109,16 @@ if (state.mcpServerId) {
 } else {
   const { json } = await chord('POST', `/v1/workspaces/${ws}/mcp-servers`, { ...mcpBody, enabled: false });
   state.mcpServerId = json.id;
-  save();
 }
+state.mcpUrl = mcpBody.url;
+save();
 
 // 3. Teammate (created paused; idempotent via creation_request_id)
-const NAMES = { first_name: 'Flavorburst', last_name: 'Sales Rescue', display_name: 'Flavorburst · Sales Rescue' };
+const NAMES = { first_name: 'Flavorburst', last_name: INSTANCE.lastName, display_name: INSTANCE.label };
 if (!state.teammateId) {
   const all: any[] = (await chord('GET', '/v1/teammates')).json;
   const domain = all.find((t) => t.email?.includes('@'))?.email.split('@')[1] ?? 'example.com';
-  const email = `sales-rescue@${domain}`;
+  const email = `${INSTANCE.name}@${domain}`;
   const existing = all.find((t) => t.email === email);
   if (existing) {
     state.teammateId = existing.id;
@@ -112,7 +129,7 @@ if (!state.teammateId) {
 if (!state.teammateId) {
   const email =
     state.teammateEmail ??
-    `sales-rescue@${(await chord('GET', '/v1/teammates')).json.find((t: any) => t.email?.includes('@'))?.email.split('@')[1] ?? 'example.com'}`;
+    `${INSTANCE.name}@${(await chord('GET', '/v1/teammates')).json.find((t: any) => t.email?.includes('@'))?.email.split('@')[1] ?? 'example.com'}`;
   const { json } = await chord('POST', '/v1/teammates', {
     email,
     ...NAMES,
@@ -122,7 +139,7 @@ if (!state.teammateId) {
     mcp_server_ids: [state.mcpServerId],
     escalation_policy: 'escalate_to_human',
     start_paused: true,
-    creation_request_id: 'sales-rescue-v1',
+    creation_request_id: `${INSTANCE.name}-v1`,
   });
   state.teammateId = json.id;
   state.teammateEmail = email;
@@ -148,7 +165,7 @@ if (!state.skillId) {
   if (state.skillId) save();
 }
 if (!state.skillId) {
-  const { json } = await chord('POST', `/v1/teammates/${tm}/skills`, { ...pkg, idempotency_key: `sales-rescue-create-${hash}` });
+  const { json } = await chord('POST', `/v1/teammates/${tm}/skills`, { ...pkg, idempotency_key: `${INSTANCE.name}-create-${hash}` });
   state.skillId = json.id ?? json.skill?.id;
   save();
 } else if (state.skillHash !== hash) {
@@ -156,7 +173,7 @@ if (!state.skillId) {
   await chord('PUT', `/v1/teammates/${tm}/skills/${state.skillId}/draft`, {
     ...pkg,
     expected_version: cur.version,
-    idempotency_key: `sales-rescue-draft-${hash}-v${cur.version}`,
+    idempotency_key: `${INSTANCE.name}-draft-${hash}-v${cur.version}`,
   });
 }
 if (state.skillHash !== hash) {
@@ -164,7 +181,7 @@ if (state.skillHash !== hash) {
   await chord('POST', `/v1/teammates/${tm}/skills/${state.skillId}/publish`, {
     expected_version: cur.version,
     summary: `skills/sales-rescue @ ${hash}`,
-    idempotency_key: `sales-rescue-publish-${hash}-v${cur.version}`,
+    idempotency_key: `${INSTANCE.name}-publish-${hash}-v${cur.version}`,
   });
   state.skillHash = hash;
   save();
@@ -193,7 +210,7 @@ workspace  ${ws}
 mcp        ${state.mcpServerId}  health=${health.json?.status} tools=${Array.isArray(tools.json) ? tools.json.length : '?'}
 skill      ${state.skillId}  published v${s?.published_version} (${files.length} files, hash ${hash})
 scope      mcp=${JSON.stringify(t.mcp_server_ids)} connector_tools_scoped=${t.connector_tools_scoped}
-Restart the server so it picks up the teammate id for message delivery.`);
+${DEV ? `Run the local service with CHORD_TEAMMATE_ID=${tm} so messages go through this dev teammate.` : 'Restart the server so it picks up the teammate id for message delivery.'}`);
 if (t.lifecycle_state !== 'TEAMMATE_ACTIVE') {
   console.error(`Teammate is ${t.lifecycle_state}, not active. Activation may need a workspace admin.`);
   process.exit(1);

@@ -25,11 +25,14 @@ Pick the op from what the owner means. **Ask if it's ambiguous.**
 | "Change the price to ₦7,000" | `price` | 7000 |
 | "The donuts are finished" | `sold_out` | (none) |
 | "We've stopped selling it" | `discontinue` | (none) |
+| "Bring back the cake bomb" (a discontinued item) | `reactivate` | (none) |
 
 - Identify the product with `search_products` first if they don't give a SKU, and confirm which one
   if several match.
 - `needs_confirmation: true` → read back the before → after values and ask "Shall I save that?" If
-  yes, call again with the **same** op and value plus `confirmation_id`.
+  yes, call again with the **same** op and value plus `confirmation_id`. On a later turn you cannot see
+  the earlier `confirmation_id`: call `update_inventory` with the same op and value to get it again (it
+  is the same ID), then call once more with it. Ask the owner only once.
 - `below_reserved` → explain units are held for customers and how many.
 - `made_to_order` → that item is baked per date; use `manage_capacity` instead (below). Price
   changes still use `update_inventory` with op `price`.
@@ -57,15 +60,18 @@ Cakes, bentos, bouquets and platters each have a number of baking slots per day.
 ## New products: `add_product`
 "Add my new red velvet bento, ₦12,000" → a product that is not on the menu yet.
 
-1. Check with `search_products` that it is really new. If it exists, use `update_inventory` instead.
+1. Check with `search_products` that it is really new. If it exists, use `update_inventory` instead
+   (`product_discontinued` means it exists but is not on sale: use op `reactivate`).
 2. Ask only for what is missing:
    - **Ready-made treat** (`fulfilment: stock`): how many there are now (`qty`).
    - **Made to order** (`fulfilment: made_to_order`): which daily limit it shares (`capacity_group`,
      for example `cakes` or `bentos`; `unknown_group` lists them) and how many days of notice
      (`lead_time_days`).
    - Name, price in naira and category. Colour, a short description and an https photo link are optional.
-3. Call `add_product` without `confirm`. Read the preview back: name, price, SKU, and qty or notice.
-4. When the owner agrees, call it again with the same details and `confirm: true`.
+3. Call `add_product` without `confirmation_id`. Read the preview back: name, price, SKU, and qty or notice.
+4. When the owner agrees, call it again with the same details to get the same `confirmation_id`, then
+   call once more with it. Ask the owner only once.
+   `invalid_confirmation` means the details changed: preview again.
 5. Tell her customers can find it now, and share its `image_url`.
 
 ## Demand questions: `get_demand_summary`

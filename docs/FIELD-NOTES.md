@@ -108,6 +108,7 @@ Thus, on each new turn, the model sees its earlier claims but not the tool resul
 - Each message from my backend ends with a reference, for example `(ref NTF-…)`. The agent uses `get_my_updates` to get the current facts for that reference.
 - My database, not the agent, is the record of what happened.
 - Owner tools accept the PIN on each call. A session token from an earlier turn is not useful, because the agent cannot see it on the next turn.
+- Confirmation IDs are a hash of the change, not a random value. At first, a large stock change returned a random ID. On the next turn the agent could not see it, so each "yes" from the owner made a new preview and a new question. Now the same change always gets the same ID, and the agent gets it again when the owner says yes.
 
 This workaround costs time. The agent repeats lookups on each turn. In one checkout turn, it called five tools (`get_my_updates`, `search_products` two times, `reserve_product` and `prepare_checkout`), and the turn took 10.6 seconds. All my tools are idempotent, so the repeated calls are safe.
 

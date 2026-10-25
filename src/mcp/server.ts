@@ -194,12 +194,12 @@ export function buildMcpServer(deps: Deps) {
 
   tool(
     'update_inventory',
-    'OWNER ONLY. Change stock or price. op: "increment" = units ADDED ("add 10", "received 6"); "set" = new TOTAL ("we have 10 now"); "price" = new price in naira; "sold_out"; "discontinue". If unsure which the owner means, ask. Large changes return needs_confirmation: read the after-values back and resend with confirmation_id.',
+    'OWNER ONLY. Change stock or price. op: "increment" = units ADDED ("add 10", "received 6"); "set" = new TOTAL ("we have 10 now"); "price" = new price in naira; "sold_out"; "discontinue"; "reactivate" = sell a discontinued product again. If unsure which the owner means, ask. Large changes return needs_confirmation: read the after-values back and resend with confirmation_id.',
     {
       owner_token: ownerToken,
       pin: ownerPin,
       sku,
-      op: z.enum(['increment', 'set', 'price', 'sold_out', 'discontinue']),
+      op: z.enum(['increment', 'set', 'price', 'sold_out', 'discontinue', 'reactivate']),
       value: z.number().optional(),
       confirmation_id: id.optional(),
     },
@@ -208,7 +208,7 @@ export function buildMcpServer(deps: Deps) {
 
   tool(
     'add_product',
-    'OWNER ONLY. Add a new product to the menu. The first call (without confirm) returns a preview: read it back to the owner. If they agree, call again with the same details and confirm: true. A stock item needs qty (how many there are now). A made-to-order item (for example a cake) needs capacity_group (which daily limit it shares, for example "cakes" or "bentos") and lead_time_days (days of notice). price is in naira. If the item already exists, use update_inventory instead.',
+    'OWNER ONLY. Add a new product to the menu. The first call returns a preview and a confirmation_id: read the preview back to the owner. If they agree, call again with the same details and that confirmation_id. A stock item needs qty (how many there are now). A made-to-order item (for example a cake) needs capacity_group (which daily limit it shares, for example "cakes" or "bentos") and lead_time_days (days of notice). price is in naira. If the item already exists, use update_inventory instead (op "reactivate" for a discontinued item).',
     {
       owner_token: ownerToken,
       pin: ownerPin,
@@ -222,7 +222,7 @@ export function buildMcpServer(deps: Deps) {
       colour: z.string().max(20).optional(),
       description: z.string().max(200).optional(),
       image_url: z.string().max(300).optional().describe("The owner's photo link (https), if they have one"),
-      confirm: z.boolean().optional(),
+      confirmation_id: id.optional(),
     },
     (a) => addProduct(deps, a),
   );

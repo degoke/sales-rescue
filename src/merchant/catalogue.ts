@@ -1,14 +1,18 @@
 // Owner adds a new product by chat ("add my new red velvet bento, ₦12,000"). Two calls: the first
-// returns a preview to read back; the second, with confirm: true, writes it. No stored state is
-// needed, because the product does not exist until the second call.
+// returns a preview and a confirmation_id; the second, with that confirmation_id, writes it. The ID is
+// a hash of the exact details (SKU included), so the write is always what the owner heard read back.
+import { createHash } from 'node:crypto';
+import { nextRef } from '../db/client.js';
 import type { Deps } from '../deps.js';
 import { fail } from '../lib/errors.js';
 import { naira, nairaToKobo } from '../lib/money.js';
 import { cleanText } from '../lib/security.js';
 import { requireOwner } from './owner.js';
 import { productImageUrl } from './product-image.js';
+import { insertProduct, type NewProduct } from './products.js';
 
 const MAX_PRICE_NGN = 10_000_000;
+const MAX_SKU = 20; // the /products/:file image route accepts SKUs of up to 20 characters
 
 export type AddProductInput = {
   owner_token?: string;
@@ -23,13 +27,13 @@ export type AddProductInput = {
   colour?: string;
   description?: string;
   image_url?: string;
-  confirm?: boolean;
+  confirmation_id?: string;
 };
 
 /** A SKU from the shop's prefix and the product name, e.g. "FB-RED-VELVET-BENTO" (max 20 chars). */
 async function newSku(db: Deps['sql'], name: string) {
   const [first] = await db<{ sku: string }[]>`select sku from products order by sku limit 1`;
-  const prefix = first?.sku.includes('-') ? first.sku.split('-')[0] : 'SKU';
+  const prefix = (first?.sku.includes('-') ? first.sku.split('-')[0] : 'SKU').slice(0, 8);
   const words = name
     .toUpperCase()
     .split(/[^A-Z0-9]+/)
@@ -41,15 +45,26 @@ async function newSku(db: Deps['sql'], name: string) {
       if (`${sku}-${w}`.length > max) break;
       sku = `${sku}-${w}`;
     }
-    return sku === prefix ? `${prefix}-${(words[0] ?? 'ITEM').slice(0, max - prefix.length - 1)}` : sku;
+    return sku === prefix ? `${prefix}-${(words[0] ?? 'ITEM').slice(0, Math.max(1, max - prefix.length - 1))}` : sku;
   };
+  // One query for the SKUs already taken under this prefix, then find a free suffix in memory.
+  const taken = new Set(
+    (await db<{ sku: string }[]>`select upper(sku) as sku from products where starts_with(upper(sku), ${`${prefix.toUpperCase()}-`})`).map(
+      (r) => r.sku,
+    ),
+  );
   for (let n = 1; n < 100; n++) {
-    const candidate = n === 1 ? skuWithin(20) : `${skuWithin(20 - String(n).length - 1)}-${n}`;
-    const [taken] = await db`select 1 from products where upper(sku) = ${candidate}`;
-    if (!taken) return candidate;
+    const candidate = n === 1 ? skuWithin(MAX_SKU) : `${skuWithin(MAX_SKU - String(n).length - 1)}-${n}`;
+    if (!taken.has(candidate.toUpperCase())) return candidate;
   }
   return fail('sku_unavailable', 'Could not make a unique SKU for this name. Use a more specific name.');
 }
+
+const confirmationFor = (row: NewProduct) =>
+  `ADD-${createHash('sha256')
+    .update(JSON.stringify({ ...row, price_kobo: row.price_kobo.toString() }))
+    .digest('hex')
+    .slice(0, 16)}`;
 
 export async function addProduct(deps: Deps, input: AddProductInput) {
   await requireOwner(deps, input.owner_token, input.pin);
@@ -81,11 +96,18 @@ export async function addProduct(deps: Deps, input: AddProductInput) {
     if (!Number.isInteger(leadTime) || leadTime < 0 || leadTime > 30) fail('invalid_lead_time', 'Notice must be 0 to 30 days.');
   }
 
-  const [dupe] = await deps.sql<{ sku: string }[]>`select sku from products where lower(name) = lower(${name!})`;
+  const [dupe] = await deps.sql<{ sku: string; status: string }[]>`select sku, status from products where lower(name) = lower(${name!})`;
+  if (dupe?.status === 'DISCONTINUED') {
+    fail(
+      'product_discontinued',
+      `"${name}" is on the menu as ${dupe.sku}, but it is discontinued. Use update_inventory with op "reactivate" to sell it again.`,
+      { sku: dupe.sku },
+    );
+  }
   if (dupe)
     fail('product_exists', `"${name}" is already on the menu as ${dupe.sku}. Use update_inventory to change it.`, { sku: dupe.sku });
 
-  const row = {
+  const row: NewProduct = {
     sku: await newSku(deps.sql, name!),
     name: name!,
     category: category!,
@@ -108,23 +130,28 @@ export async function addProduct(deps: Deps, input: AddProductInput) {
     ...(row.fulfilment === 'stock' ? { qty: row.qty_on_hand } : { capacity_group: group, lead_time_days: leadTime }),
     image_url: productImageUrl(deps.publicBaseUrl, row),
   };
+  const confirmationId = confirmationFor(row);
 
-  if (!input.confirm) {
+  if (!input.confirmation_id) {
     return {
       needs_confirmation: true,
+      confirmation_id: confirmationId,
       preview,
-      message: 'Read these details back to the owner. If they agree, call add_product again with the same details and confirm: true.',
+      message: `Read these details back to the owner. If they agree, call add_product again with the same details and confirmation_id ${confirmationId}.`,
     };
   }
+  if (input.confirmation_id !== confirmationId) {
+    fail('invalid_confirmation', 'The details or the SKU changed since the preview. Preview again and read the new details back.', {
+      preview,
+    });
+  }
 
-  const inserted = await deps.sql`
-    insert into products (sku, name, category, colour, style, description, price_kobo, qty_on_hand, image_url,
-                          fulfilment, capacity_group, lead_time_days)
-    values (${row.sku}, ${row.name}, ${row.category}, ${row.colour}, ${row.style}, ${row.description},
-            ${row.price_kobo.toString()}, ${row.qty_on_hand}, ${row.image_url}, ${row.fulfilment}, ${row.capacity_group},
-            ${row.lead_time_days})
-    on conflict (sku) do nothing
-    returning sku`;
-  if (!inserted.length) fail('product_exists', 'That product was just added. Search for it before you add it again.');
+  await deps.sql.begin(async (tx) => {
+    if (!(await insertProduct(tx, row))) fail('product_exists', 'That product was just added. Search for it before you add it again.');
+    // Same audit trail as update_inventory: every owner change to the menu has a row.
+    await tx`insert into inventory_changes (id, sku, op, value, before_qty, after_qty, before_price_kobo, after_price_kobo, status, applied_at)
+             values (${await nextRef(tx, 'CHG')}, ${row.sku}, 'add', ${row.qty_on_hand}, 0, ${row.qty_on_hand}, 0,
+                     ${row.price_kobo.toString()}, 'APPLIED', ${deps.now()})`;
+  });
   return { added: true, product: preview, message: `${row.name} is on the menu now. Customers can find and order it.` };
 }

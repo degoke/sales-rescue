@@ -1,6 +1,6 @@
 // Drives real conversations with the live Sales Rescue teammate through Chord's chat API and checks
 // the business records afterwards. Transcripts go to docs/transcripts/ (owner PIN redacted).
-//   pnpm scenarios [recovered-sale|fake-owner|alternative|pickup|full-date|all] [--reset]
+//   pnpm scenarios [recovered-sale|fake-owner|alternative|pickup|full-date|new-product|all] [--reset]
 // Payment: the script pauses with the Paystack link and polls until the payment is verified, so you
 // can complete it in a browser with a Paystack test card.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -356,6 +356,51 @@ async function fullDate() {
   save('full-date', 'Fully booked date: another date, the waiting list, and a slot that opens');
 }
 
+async function newProduct() {
+  const favour: Person = { sender: `+23486${runId.slice(-8)}`, name: 'Favour' };
+  const tolu: Person = { sender: `+23487${runId.slice(-8)}`, name: 'Tolu' };
+  const product = async () =>
+    (await sql`select sku, status, fulfilment, capacity_group, price_kobo from products where lower(name) = 'red velvet bento'`)[0];
+
+  note('Favour adds a new cake to the menu by chat. The agent reads it back before it adds anything.');
+  await say(favour, 'Hi, this is Favour, the owner.');
+  const ask = await say(
+    favour,
+    `My PIN is ${PIN}. Please add a new product: Red Velvet Bento, ₦12,000, bento cakes, made to order with 1 day notice.`,
+  );
+  check(
+    ask.tools.some((t: string) => t.includes('add_product')),
+    'agent previewed the product with add_product',
+  );
+  check(!(await product()), 'nothing was added before Favour confirmed');
+  await say(favour, 'Yes, that is correct. Add it.');
+  const p = await product();
+  check(
+    p?.status === 'ACTIVE' && p.fulfilment === 'made_to_order' && p.capacity_group === 'bentos' && Number(p.price_kobo) === 1_200_000,
+    `added as ${p?.sku} (${p?.fulfilment}, ${p?.capacity_group}, ${p?.price_kobo})`,
+  );
+  const [audit] = p ? await sql`select op from inventory_changes where sku = ${p.sku} and op = 'add'` : [];
+  check(!!audit, 'the addition is in the audit trail');
+
+  note('A customer finds the new cake straight away');
+  const found = await say(tolu, 'Hi, do you have a red velvet bento?');
+  check(
+    found.tools.some((t: string) => t.includes('search_products')) && /red velvet/i.test(found.reply),
+    'customer was offered the new cake',
+  );
+
+  note('Favour stops selling a treat, then brings it back');
+  await say(favour, 'Please discontinue the Lux Cake Bomb. We have stopped making it for good.');
+  await say(favour, 'Yes, discontinue it.');
+  const [off] = await sql`select status from products where sku = 'FB-CAKE-BOMB'`;
+  check(off.status === 'DISCONTINUED', `cake bomb is ${off.status}`);
+  await say(favour, 'Actually, bring the Lux Cake Bomb back. Customers keep asking for it.');
+  const [on] = await sql`select status from products where sku = 'FB-CAKE-BOMB'`;
+  const [re] = await sql`select op from inventory_changes where sku = 'FB-CAKE-BOMB' and op = 'reactivate'`;
+  check(on.status === 'ACTIVE' && !!re, `cake bomb is ${on.status} again (reactivate recorded: ${!!re})`);
+  save('new-product', 'Owner adds a product, then stops and restarts another');
+}
+
 const which = process.argv[2] ?? 'all';
 if (process.argv.includes('--reset')) {
   await resetSchema(sql);
@@ -367,4 +412,5 @@ if (which === 'fake-owner' || which === 'all') await fakeOwner();
 if (which === 'alternative' || which === 'all') await alternative();
 if (which === 'pickup' || which === 'all') await pickup();
 if (which === 'full-date' || which === 'all') await fullDate();
+if (which === 'new-product' || which === 'all') await newProduct();
 await sql.end();

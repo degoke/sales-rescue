@@ -19,6 +19,7 @@ export type ProductRow = {
   fulfilment: 'stock' | 'made_to_order';
   capacity_group: string | null;
   lead_time_days: number;
+  updated_at?: Date;
 };
 
 /** Units held for customers right now. Expired holds are ignored even before the sweeper closes them. */
@@ -85,6 +86,34 @@ export async function datesNear(db: Db, p: ProductRow, now: Date, day: string, o
     .sort((x, y) => gap(x.date) - gap(y.date) || x.date.localeCompare(y.date))
     .slice(0, opts.count ?? 5)
     .sort((x, y) => x.date.localeCompare(y.date));
+}
+
+export type NewProduct = Pick<
+  ProductRow,
+  | 'sku'
+  | 'name'
+  | 'category'
+  | 'colour'
+  | 'style'
+  | 'description'
+  | 'price_kobo'
+  | 'qty_on_hand'
+  | 'image_url'
+  | 'fulfilment'
+  | 'capacity_group'
+  | 'lead_time_days'
+>;
+
+/** The one place that inserts a product (seed and add_product). Returns false when the SKU exists. */
+export async function insertProduct(db: Db, p: NewProduct) {
+  const rows = await db`
+    insert into products (sku, name, category, colour, style, description, price_kobo, qty_on_hand, image_url,
+                          fulfilment, capacity_group, lead_time_days)
+    values (${p.sku}, ${p.name}, ${p.category}, ${p.colour}, ${p.style}, ${p.description}, ${p.price_kobo.toString()},
+            ${p.qty_on_hand}, ${p.image_url}, ${p.fulfilment}, ${p.capacity_group}, ${p.lead_time_days})
+    on conflict (sku) do nothing
+    returning sku`;
+  return rows.length > 0;
 }
 
 export async function lockCapacityGroup(db: Db, group: string) {

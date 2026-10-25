@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { Sql } from './client.js';
 import { nextRef } from './client.js';
 import { hashPin } from '../merchant/owner.js';
+import { insertProduct } from '../merchant/products.js';
 import { addDays, lagosToday } from '../lib/time.js';
 
 function parseCsv(text: string): Record<string, string>[] {
@@ -48,11 +49,21 @@ export async function seed(sql: Sql, opts: { ownerPin: string; fixturesDir?: str
   }
 
   for (const p of parseCsv(readFileSync(`${dir}/catalogue.csv`, 'utf8'))) {
-    await sql`insert into products (sku, name, category, colour, style, description, price_kobo, qty_on_hand, image_url,
-                                    fulfilment, capacity_group, lead_time_days)
-              values (${p.sku}, ${p.name}, ${p.category}, ${p.colour}, ${p.style}, ${p.description},
-                      ${String(Math.round(Number(p.price_ngn) * 100))}, ${Number(p.quantity)}, ${p.image_url || null},
-                      ${p.fulfilment || 'stock'}, ${p.capacity_group || null}, ${Number(p.lead_time_days || 0)})`;
+    const added = await insertProduct(sql, {
+      sku: p.sku,
+      name: p.name,
+      category: p.category,
+      colour: p.colour,
+      style: p.style,
+      description: p.description,
+      price_kobo: BigInt(Math.round(Number(p.price_ngn) * 100)),
+      qty_on_hand: Number(p.quantity),
+      image_url: p.image_url || null,
+      fulfilment: (p.fulfilment || 'stock') as 'stock' | 'made_to_order',
+      capacity_group: p.capacity_group || null,
+      lead_time_days: Number(p.lead_time_days || 0),
+    });
+    if (!added) throw new Error(`Duplicate SKU in catalogue.csv: ${p.sku}`);
   }
 
   const customers = JSON.parse(readFileSync(`${dir}/customers.json`, 'utf8'));

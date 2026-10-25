@@ -1,5 +1,6 @@
 // Owner stock and price changes by chat. The op is explicit ("add 10" = increment, "we have 10" =
 // set), and big changes are read back for confirmation before they are written.
+import { createHash } from 'node:crypto';
 import { nextRef } from '../db/client.js';
 import type { Deps } from '../deps.js';
 import { fail } from '../lib/errors.js';
@@ -10,7 +11,7 @@ import { requireOwner } from './owner.js';
 import { heldQty, lockProduct } from './products.js';
 import { cancelChordTasks, closeRestockReminders } from './restock.js';
 
-export type InventoryOp = 'increment' | 'set' | 'price' | 'sold_out' | 'discontinue';
+export type InventoryOp = 'increment' | 'set' | 'price' | 'sold_out' | 'discontinue' | 'reactivate';
 
 export async function updateInventory(
   deps: Deps,
@@ -54,6 +55,10 @@ export async function updateInventory(
       case 'discontinue':
         afterStatus = 'DISCONTINUED';
         break;
+      case 'reactivate':
+        if (p.status === 'ACTIVE') fail('already_active', `${p.name} is already on sale.`);
+        afterStatus = 'ACTIVE';
+        break;
       default:
         fail('invalid_op', `Unknown op "${input.op}".`);
     }
@@ -79,16 +84,24 @@ export async function updateInventory(
       if (!chg) fail('invalid_confirmation', 'That confirmation has expired or no longer matches current stock. Preview the change again.');
       await tx`update inventory_changes set status = 'APPLIED', applied_at = ${now} where id = ${chg.id}`;
     } else if (large) {
-      const id = await nextRef(tx, 'CHG');
+      // The agent cannot see this tool result on its next turn, so the confirmation ID must be the same
+      // each time the same change is asked for. It is a hash of the change and the product's current
+      // state (updated_at changes on every write, so an ID never matches a change that was applied).
+      const id = `CHG-${createHash('sha256')
+        .update(JSON.stringify([p.sku, input.op, v ?? null, p.qty_on_hand, p.price_kobo.toString(), p.status, p.updated_at]))
+        .digest('hex')
+        .slice(0, 16)}`;
       await tx`insert into inventory_changes (id, sku, op, value, before_qty, after_qty, before_price_kobo, after_price_kobo, status, expires_at)
                values (${id}, ${p.sku}, ${input.op}, ${v ?? null}, ${p.qty_on_hand}, ${afterQty}, ${p.price_kobo.toString()},
-                       ${afterPrice.toString()}, 'PENDING_CONFIRMATION', ${minutesFrom(now, 10)})`;
+                       ${afterPrice.toString()}, 'PENDING_CONFIRMATION', ${minutesFrom(now, 10)})
+               on conflict (id) do update set expires_at = excluded.expires_at
+               where inventory_changes.status = 'PENDING_CONFIRMATION'`;
       return {
         applied: false,
         needs_confirmation: true,
         confirmation_id: id,
         ...preview,
-        message: `This is a large change. Read the "after" values back to the owner and, if they confirm, call update_inventory again with the same op/value and confirmation_id ${id}.`,
+        message: `This is a large change. Read the "after" values back to the owner. When they confirm, call update_inventory with the same op/value and confirmation_id ${id}. Asking for the same change again returns the same confirmation_id.`,
       };
     } else {
       const id = await nextRef(tx, 'CHG');
