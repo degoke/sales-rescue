@@ -11,6 +11,7 @@ import { reserveProduct } from '../merchant/reservations.js';
 import { confirmPayment, createPaymentLink, prepareCheckout, trackOrder } from '../merchant/orders.js';
 import { verifyOwner } from '../merchant/owner.js';
 import { updateInventory } from '../merchant/inventory.js';
+import { addProduct } from '../merchant/catalogue.js';
 import { getDemandSummary } from '../merchant/metrics.js';
 import { manageRestock } from '../merchant/restock.js';
 
@@ -203,6 +204,27 @@ export function buildMcpServer(deps: Deps) {
       confirmation_id: id.optional(),
     },
     (a) => updateInventory(deps, a),
+  );
+
+  tool(
+    'add_product',
+    'OWNER ONLY. Add a new product to the menu. The first call (without confirm) returns a preview: read it back to the owner. If they agree, call again with the same details and confirm: true. A stock item needs qty (how many there are now). A made-to-order item (for example a cake) needs capacity_group (which daily limit it shares, for example "cakes" or "bentos") and lead_time_days (days of notice). price is in naira. If the item already exists, use update_inventory instead.',
+    {
+      owner_token: ownerToken,
+      pin: ownerPin,
+      name: z.string().min(2).max(60),
+      price: z.number().positive().max(10_000_000).describe('Price in naira, e.g. 12000'),
+      category: z.string().min(2).max(40),
+      fulfilment: z.enum(['stock', 'made_to_order']),
+      qty: z.number().int().min(0).max(1000).optional().describe('Stock items: how many there are now'),
+      capacity_group: z.string().max(20).optional().describe('Made-to-order items: e.g. "cakes", "bentos"'),
+      lead_time_days: z.number().int().min(0).max(30).optional().describe('Made-to-order items: days of notice'),
+      colour: z.string().max(20).optional(),
+      description: z.string().max(200).optional(),
+      image_url: z.string().max(300).optional().describe("The owner's photo link (https), if they have one"),
+      confirm: z.boolean().optional(),
+    },
+    (a) => addProduct(deps, a),
   );
 
   tool(

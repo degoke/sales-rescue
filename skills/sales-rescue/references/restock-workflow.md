@@ -54,6 +54,20 @@ Cakes, bentos, bouquets and platters each have a number of baking slots per day.
 - When `slots_offered_to_waiting_customers_on` isn't empty, tell her the customers waiting for those
   dates will be offered the slots in queue order. The system messages them; you don't.
 
+## New products: `add_product`
+"Add my new red velvet bento, ₦12,000" → a product that is not on the menu yet.
+
+1. Check with `search_products` that it is really new. If it exists, use `update_inventory` instead.
+2. Ask only for what is missing:
+   - **Ready-made treat** (`fulfilment: stock`): how many there are now (`qty`).
+   - **Made to order** (`fulfilment: made_to_order`): which daily limit it shares (`capacity_group`,
+     for example `cakes` or `bentos`; `unknown_group` lists them) and how many days of notice
+     (`lead_time_days`).
+   - Name, price in naira and category. Colour, a short description and an https photo link are optional.
+3. Call `add_product` without `confirm`. Read the preview back: name, price, SKU, and qty or notice.
+4. When the owner agrees, call it again with the same details and `confirm: true`.
+5. Tell her customers can find it now, and share its `image_url`.
+
 ## Demand questions: `get_demand_summary`
 "Who's waiting?", "What should I bake more of?", "How many sales did we recover?", "Any problems?"
 Answer from the result: customers waiting and units per product (and per date for full dates),
