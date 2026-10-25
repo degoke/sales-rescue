@@ -1,0 +1,11 @@
+{
+  "name": "Flavorburst Bakes and Treats",
+  "owner_name": "Favour",
+  "owner_phone": "+2348000000099",
+  "timezone": "Africa/Lagos",
+  "hold_minutes": 30,
+  "offer_hold_minutes": 60,
+  "demand_threshold": 3,
+  "large_qty_change": 20,
+  "large_price_change_pct": 30
+}

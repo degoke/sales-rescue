@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.chord-state.json
+docs/setup-log/
+
+# Working docs stay local. Only these documents are published.
+docs/*
+!docs/DEPLOY.md
+!docs/GO-LIVE.md
+!docs/FIELD-NOTES.md
+
+# Submission text is sent separately, not published.
+SUBMISSION.md

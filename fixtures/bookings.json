@@ -1,0 +1,5 @@
+[
+  { "ref": "+2348000000021", "display_name": "Chidi", "sku": "FB-CUSTOM-CAKE", "date": "saturdays", "weeks": 6, "qty": 1, "notes": "Chocolate, gold drip, 'Happy 30th Ada'" },
+  { "ref": "+2348000000022", "display_name": "Ngozi", "sku": "FB-CAKE-8-2L", "date": "saturdays", "weeks": 6, "qty": 1, "notes": "Red velvet" },
+  { "ref": "+2348000000023", "display_name": "Femi", "sku": "FB-LAMBETH", "date": "saturdays", "weeks": 6, "qty": 1, "notes": "Pink, 'Happy anniversary'" }
+]

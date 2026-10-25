@@ -1,0 +1,6 @@
+[
+  { "code": "cakes", "name": "Celebration cakes", "daily_slots": 3 },
+  { "code": "bentos", "name": "Bento cakes", "daily_slots": 8 },
+  { "code": "bouquets", "name": "Cupcake bouquets", "daily_slots": 2 },
+  { "code": "platters", "name": "Small chops platters", "daily_slots": 2 }
+]

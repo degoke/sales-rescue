@@ -1,0 +1,14 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+.git
+.github
+.chord-state.json
+docs
+tests
+scripts
+skills
+*.md
+.railway

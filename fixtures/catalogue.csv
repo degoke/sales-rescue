@@ -1,0 +1,22 @@
+sku,name,category,colour,style,price_ngn,quantity,description,image_url,fulfilment,capacity_group,lead_time_days
+FB-CHIN-JAR,Milky Super Crunchy Chin-Chin (Jar),Chin-chin,Golden,Snack,6500,12,Milky super crunchy chin-chin in a resealable jar.,,stock,,0
+FB-CHIN-POUCH,Milky Super Crunchy Chin-Chin (Pouch),Chin-chin,Golden,Snack,2500,0,Milky super crunchy chin-chin in a handy pouch.,,stock,,0
+FB-CHIN-CUBES,Crunchy Chinchin Cubes,Chin-chin,Golden,Snack,3500,8,Milky and crunchy chinchin cubes for snacking any time.,,stock,,0
+FB-BANANA-MINI,Special Banana Bread (Mini loaf),Banana bread,Brown,Loaf,3500,0,Flavorburst's special banana bread with toppings in a mini loaf.,,stock,,0
+FB-BANANA-MIDI,Special Banana Bread (Midi loaf),Banana bread,Brown,Loaf,6500,2,Flavorburst's special banana bread with toppings in a midi loaf.,,stock,,0
+FB-DONUTS-6,Fluffy Donuts (box of 6),Donuts,White,Snack,4500,5,"Plain, ring, milky and chocolate donuts, six to a box.",,stock,,0
+FB-CAKE-TUB,Lux Cake Tub,Cake tubs,Pink,Dessert,5000,6,The creamiest cake layered in a tub.,,stock,,0
+FB-CAKE-BOMB,Lux Cake Bomb,Cake tubs,Chocolate,Dessert,4000,4,A rich chocolate cake bomb.,,stock,,0
+FB-CUPCAKE-6,Floral Cupcake Box (6),Cupcakes,Pink,Gift,9000,3,Six floral-piped cupcakes in a gift box.,,stock,,0
+FB-CUPCAKE-12,Floral Cupcake Box (12),Cupcakes,Pink,Gift,16000,1,Twelve floral-piped cupcakes in a gift box.,,stock,,0
+FB-PASTRIES,Pastries Pack (6 meat pies),Pastries,Golden,Snack,4800,6,Six freshly baked meat pies.,,stock,,0
+FB-CHOPS-PACK,Delectable Chops (individual pack),Small chops,Golden,Snack,3000,10,"Puff-puff, samosa, spring rolls and chicken in an individual pack.",,stock,,0
+FB-BENTO-4,Bento Delights (4 inch),Bento cakes,Pink,Gift,10000,0,"4-inch bento cake, perfect as a gift.",,made_to_order,bentos,1
+FB-BENTO-5,Size 5 Bento,Bento cakes,Red,Gift,10000,0,A small but cute size-5 bento cake.,,made_to_order,bentos,1
+FB-DBUDGET,D'budget Combo,Bento cakes,Pink,Combo,17000,0,A 7-inch bento cake with 3 cupcakes: cakes on a budget.,,made_to_order,bentos,1
+FB-CAKE-8-2L,8-inch Cake (2 layers),Celebration cakes,Pink,Celebration,35000,0,A medium 8-inch celebration cake in 2 layers.,,made_to_order,cakes,2
+FB-CAKE-8-3L,8-inch Cake (3 layers),Celebration cakes,Pink,Celebration,45000,0,A medium 8-inch celebration cake in 3 layers.,,made_to_order,cakes,2
+FB-CUSTOM-CAKE,Custom Cake (8 inch),Celebration cakes,Pink,Custom,55000,0,"Your idea brought to life: you choose the flavour, colours and design.",,made_to_order,cakes,3
+FB-LAMBETH,Luxury Lambeth Heart Cake,Celebration cakes,Red,Vintage,50000,0,A heart-shaped vintage Lambeth cake.,,made_to_order,cakes,3
+FB-CAKE-BOUQUET,Cupcake Bouquet,Bouquets,Pink,Gift,25000,0,"An edible cupcake bouquet, better and tastier than plastic flowers.",,made_to_order,bouquets,2
+FB-CHOPS-PLATTER,Delectable Chops Platter,Small chops,Golden,Party,35000,0,A party platter of small chops.,,made_to_order,platters,2

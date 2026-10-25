@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sales-rescue-pg
+    environment:
+      POSTGRES_USER: sales_rescue
+      POSTGRES_PASSWORD: sales_rescue
+      POSTGRES_DB: sales_rescue
+    ports:
+      - "127.0.0.1:55470:5432"
+    volumes:
+      - sales-rescue-pg:/var/lib/postgresql/data
+      - ./src/db/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+volumes:
+  sales-rescue-pg:

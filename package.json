@@ -1,0 +1,42 @@
+{
+  "name": "merchant-ai-team",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sales Rescue: a Chord WhatsApp teammate that recovers sales lost to out-of-stock items (TSG Labs build exercise).",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').copyFileSync('src/db/schema.sql','dist/db/schema.sql')\"",
+    "start": "node --enable-source-maps dist/index.js",
+    "check": "biome ci . && tsc --noEmit && vitest run",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:reset": "tsx scripts/reset-db.ts",
+    "chord:setup": "tsx scripts/chord-setup.ts",
+    "scenarios": "tsx scripts/run-scenarios.ts",
+    "deploy:railway": "bash scripts/deploy-railway.sh"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "dotenv": "^18.0.8",
+    "hono": "^4.13.13",
+    "postgres": "^3.4.9",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.2",
+    "@types/node": "^26.6.5",
+    "railway": "^3.16.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "packageManager": "pnpm@12.11.2"
+}
