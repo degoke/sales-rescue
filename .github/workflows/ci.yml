@@ -39,7 +39,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Typecheck (strict, incl. scripts and tests)
-        run: pnpm exec tsc --noEmit --noUnusedLocals --noUnusedParameters
+        run: pnpm typecheck
       - name: Build
         run: pnpm build
       - name: Docker image (what Railway deploys)
