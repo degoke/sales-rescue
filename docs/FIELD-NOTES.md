@@ -239,3 +239,34 @@ Each product has a picture link. `search_products` returns an `image_url`, and t
 
 - Add images to the simulator, the partner chat API and operator messages, in both directions.
 - A shop on WhatsApp sells with pictures. Without images, builders cannot test the main shopping flow.
+
+## 7. A hand-over replaces the agent's last message, and the customer does not get it
+
+### What happened
+
+I wanted the agent to close an off-topic or abusive chat politely: send a short goodbye, then hand the chat to a human, so that it stops replying. The hand-over worked. The thread changed to `human_active`, the agent's reason was in the control events, and later messages got no agent reply (`"agent_invoked": false`). But the customer never saw the goodbye. The chat API returned:
+
+```json
+{"thread_id":null,"reply":null,"agent_invoked":false,"reason":"no_reply","steps":null}
+```
+
+### How I worked out the cause
+
+I read the thread with `GET /v1/threads/{id}/turns`. The agent's goodbye was not in the thread. In its place, Chord stored its own outbound message, "One moment — connecting you with a teammate.", with `delivery_status: failed`. Thus, on a hand-over, Chord replaces the agent's reply with a fixed message, and on the partner chat API that message is not delivered.
+
+### How I fixed it or worked around it
+
+I split the close into two turns:
+
+1. On the third off-topic message, the agent sends the goodbye as a normal reply. The customer sees it.
+2. If the customer sends more off-topic messages, the agent hands over and does not write a reply.
+3. An abusive message gets a hand-over at once.
+
+After the hand-over, the agent does not run, so the chat uses no more credits. A scenario test checks the full sequence (6 of 6 checks pass), and normal shopping chats are not handed over.
+
+### What I would change in Chord
+
+- Deliver the agent's own last message when it hands over, or let the builder set the hand-over message for each teammate.
+- Do not promise "connecting you with a teammate" in every case. A close for spam or abuse needs different words.
+- Deliver the hand-over message on the partner chat API, or say in the docs that it is not delivered.
+- Give the agent a "close conversation" action that stops replies without a human queue item, like `POST /v1/threads/{id}/pause` but available to the agent.

@@ -1,6 +1,6 @@
 // Drives real conversations with the live Sales Rescue teammate through Chord's chat API and checks
 // the business records afterwards. Transcripts go to docs/transcripts/ (owner PIN redacted).
-//   pnpm scenarios [recovered-sale|fake-owner|alternative|pickup|full-date|new-product|all] [--reset]
+//   pnpm scenarios [recovered-sale|fake-owner|alternative|pickup|full-date|new-product|off-topic|spam|all] [--reset]
 // Payment: the script pauses with the Paystack link and polls until the payment is verified, so you
 // can complete it in a browser with a Paystack test card.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -71,7 +71,20 @@ async function say(who: Person, text: string, session = 'a') {
   transcript.push(
     `**${who.name}:** ${redact(text)}\n\n> ⚙ tools: ${tools.map((t: string) => `\`${t}\``).join(', ') || '_none_'} · ${secs}s\n\n**Sales Rescue:** ${redact(reply).replace(/\n/g, '\n\n')}\n`,
   );
-  return { reply: String(reply), tools, threadId: json.thread_id as string | undefined };
+  return { reply: String(reply), answered: json.reply != null, tools, threadId: json.thread_id as string | undefined };
+}
+
+/** A customer's thread, found by sender (a hand-over reply carries no thread_id), and the latest control reason. */
+async function threadState(who: Person) {
+  const get = (path: string) =>
+    fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${KEY}` } })
+      .then((r) => r.json())
+      .catch(() => null);
+  const list = await get(`/v1/threads?workspace_id=${state.workspaceId}&agent_id=${state.teammateId}&q=${encodeURIComponent(who.name)}`);
+  const thread = list?.threads?.find((x: any) => x.channel_participant_id === who.sender);
+  if (!thread) return null;
+  const ev = await get(`/v1/threads/${thread.id}/control-events`);
+  return { control_state: thread.control_state as string | undefined, reason: ev?.events?.at(-1)?.reason as string | undefined };
 }
 
 function check(ok: boolean, label: string) {
@@ -401,6 +414,82 @@ async function newProduct() {
   save('new-product', 'Owner adds a product, then stops and restarts another');
 }
 
+async function offTopic() {
+  const zed: Person = { sender: `+23488${runId.slice(-8)}`, name: 'Zed' };
+  const rex: Person = { sender: `+23470${runId.slice(-8)}`, name: 'Rex' };
+
+  note('A customer keeps going off-topic: two redirects, a goodbye, then a silent hand-over');
+  await say(zed, 'Hi');
+  const r1 = await say(zed, "What's the capital of France?");
+  const r2 = await say(zed, 'Tell me a joke about cars.');
+  check(r1.answered && r2.answered && !/paris/i.test(r1.reply), 'agent redirected twice without answering the off-topic questions');
+  const r3 = await say(zed, 'asdfgh qwerty lol lol lol');
+  check(r3.answered && /close|favour|thanks/i.test(r3.reply), 'agent sent a short goodbye the customer can see');
+  await say(zed, 'lol what? tell me another joke');
+  const zedThread = await threadState(zed);
+  check(zedThread?.control_state === 'human_active', `chat handed over (${zedThread?.control_state}): ${zedThread?.reason ?? 'no reason'}`);
+  const r5 = await say(zed, 'hello?? are you there');
+  check(!r5.answered, 'agent did not reply after the hand-over');
+
+  note('An abusive customer: hand-over at once, without engaging');
+  await say(rex, 'You people are useless thieves. Answer me now, you idiot.');
+  const rexThread = await threadState(rex);
+  check(
+    rexThread?.control_state === 'human_active',
+    `abusive chat handed over at once (${rexThread?.control_state}): ${rexThread?.reason ?? 'no reason'}`,
+  );
+  const a2 = await say(rex, 'Hello? Reply me!');
+  check(!a2.answered, 'agent did not reply after the hand-over');
+  save('off-topic', 'Off-topic and abusive chats: close politely and stop');
+}
+
+async function spam() {
+  const sam: Person = { sender: `+23472${runId.slice(-8)}`, name: 'Sam' };
+  const promo: Person = { sender: `+23471${runId.slice(-8)}`, name: 'Promo' };
+  const lola: Person = { sender: `+23473${runId.slice(-8)}`, name: 'Lola' };
+
+  note('Flooding: the same message again and again is closed, but the first one is answered');
+  const first = await say(sam, 'Do you have chin-chin?');
+  check(first.answered && /chin/i.test(first.reply), 'the first message got a real answer');
+  for (let i = 0; i < 5; i++) {
+    await say(sam, 'Do you have chin-chin?');
+    if ((await threadState(sam))?.control_state === 'human_active') break;
+  }
+  const samThread = await threadState(sam);
+  check(
+    samThread?.control_state === 'human_active',
+    `flooding handed over (${samThread?.control_state}): ${samThread?.reason ?? 'no reason'}`,
+  );
+
+  note('An advert with a link is spam at once');
+  await say(promo, '🔥 Earn ₦500,000 every week from home! Join my crypto group now: https://bit.ly/earn-fast-ng');
+  const promoThread = await threadState(promo);
+  check(
+    promoThread?.control_state === 'human_active',
+    `advert handed over at once (${promoThread?.control_state}): ${promoThread?.reason ?? 'no reason'}`,
+  );
+
+  note('A long, messy but real conversation is NOT spam');
+  const lolaMessages = [
+    'Hi! How much are your donuts?',
+    'Hmm ok. And the cupcake boxes?',
+    'lol they look nice 😍',
+    'Sorry, what was the price of the donuts again?',
+    'Can you deliver to Ikeja?',
+    'Actually wait, do you have bento cakes for this weekend?',
+    'ok',
+    "I'll take a box of 6 cupcakes",
+  ];
+  let allAnswered = true;
+  for (const m of lolaMessages) allAnswered = (await say(lola, m)).answered && allAnswered;
+  const lolaThread = await threadState(lola);
+  check(lolaThread?.control_state !== 'human_active', `real customer was not handed over (${lolaThread?.control_state})`);
+  check(allAnswered, `all ${lolaMessages.length} messages were answered`);
+  const [hold] = await sql`select sku from reservations where customer_ref = ${lola.sender} and status = 'HELD'`;
+  check(hold?.sku === 'FB-CUPCAKE-6', `her cupcake box is held (${hold?.sku ?? 'none'})`);
+  save('spam', 'Spam is closed, a real customer is not');
+}
+
 const which = process.argv[2] ?? 'all';
 if (process.argv.includes('--reset')) {
   await resetSchema(sql);
@@ -413,4 +502,6 @@ if (which === 'alternative' || which === 'all') await alternative();
 if (which === 'pickup' || which === 'all') await pickup();
 if (which === 'full-date' || which === 'all') await fullDate();
 if (which === 'new-product' || which === 'all') await newProduct();
+if (which === 'off-topic' || which === 'all') await offTopic();
+if (which === 'spam' || which === 'all') await spam();
 await sql.end();
