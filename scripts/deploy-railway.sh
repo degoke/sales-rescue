@@ -28,22 +28,31 @@ say "Validating secrets in .env"
 pnpm exec tsx scripts/check-env.ts "${SECRETS[@]}"
 
 say "Linking the Railway project"
-if ! railway status >/dev/null 2>&1; then
-  # Reuse a project with this name if one exists; only create it on the very first run.
-  project_id="$(railway list --json | node -e '
-    let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
-      const found = [];
-      const walk = (v) => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") {
-        if (v.name === process.argv[1] && typeof v.id === "string") found.push(v.id); Object.values(v).forEach(walk); } };
-      walk(JSON.parse(s || "[]"));
-      process.stdout.write(found[0] ?? "");
-    });' "$PROJECT")"
-  if [ -n "$project_id" ]; then railway link --project "$project_id"; else railway init --name "$PROJECT"; fi
-fi
+# Always link this folder to the "$PROJECT" project by name. Never trust an existing link: the
+# Railway CLI also applies links from parent folders (for example a link on your home folder), and
+# `railway config apply` deletes every resource in the linked project that railway.ts does not list.
+project_id="$(railway list --json | node -e '
+  let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+    const found = [];
+    const walk = (v) => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === "object") {
+      if (v.name === process.argv[1] && typeof v.id === "string") found.push(v.id); Object.values(v).forEach(walk); } };
+    walk(JSON.parse(s || "[]"));
+    process.stdout.write(found[0] ?? "");
+  });' "$PROJECT")"
+if [ -n "$project_id" ]; then railway link --project "$project_id"; else railway init --name "$PROJECT"; fi
+
+linked="$(railway status --json | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>process.stdout.write(JSON.parse(s).name ?? ""))')"
+[ "$linked" = "$PROJECT" ] || die "This folder is linked to the project \"$linked\", not \"$PROJECT\". Stopped before any change."
 railway status
 
 say "Applying .railway/railway.ts (Postgres, $SERVICE, variables)"
-railway config plan
+plan="$(railway config plan 2>&1)" || { echo "$plan"; die "railway config plan failed"; }
+echo "$plan"
+# Refuse to delete anything. A delete means the project holds resources that railway.ts does not list.
+destroy="$(printf '%s\n' "$plan" | grep -oE '[0-9]+ to destroy' | grep -oE '^[0-9]+' || true)"
+if [ -n "$destroy" ] && [ "$destroy" != "0" ]; then
+  die "The plan deletes $destroy resource(s) in \"$linked\". Stopped before any change."
+fi
 railway config apply --yes
 
 say "Setting secrets from .env"
