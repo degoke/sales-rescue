@@ -42,6 +42,8 @@ I tested with the partner chat API and the WhatsApp simulator. In my API tests, 
 
 This showed that the model has the identity of the sender, but the requests to my tools do not contain it.
 
+Later, I checked again with a WhatsApp simulator turn, through a proxy that logged each request exactly as Chord sent it. The result was the same: standard headers, Cloudflare headers, and a body with only `name` and `arguments`. There was no `_meta`, no thread ID and no Chord header.
+
 ### How I fixed it or worked around it
 
 The owner sends an owner PIN in the chat, and each owner tool requires the PIN. The server keeps only a hash of the PIN. After 5 incorrect PINs, the server locks the owner tools for 15 minutes.
@@ -117,7 +119,7 @@ This workaround costs time. The agent repeats lookups on each turn. In one check
 - Describe exactly what the conversation history contains.
 - Keep a short summary of each tool call in the history: the tool name, the result status and a short part of the result. Then the model can tell a checked fact from a guess.
 
-## 3. The WhatsApp simulator does not show messages from the backend
+## 3. Messages from the backend do not reach a WhatsApp simulator customer
 
 ### What happened
 
@@ -126,6 +128,8 @@ The main promise of Sales Rescue is this: when an item is available again, each 
 I sent a `MESSAGE` task directly into a simulator thread. Chord gave no error. The task status changed from `PENDING` to `COMPLETED`, and Chord stored the message as an outbound `agent` turn with `delivery_status: sent`. But the message did not appear in the simulator, also after a page reload.
 
 I also found a second problem. The simulator thread has the participant ID `partner_BLbIscGPBR20AP8B-7cab…`. The agent sees a different ID, `customer_ojLe-0j8o07KCcypymDoj…`, and gives this ID to my tools. No API links the two IDs. Thus, the backend cannot find the correct thread for a customer.
+
+The second problem has a larger effect than the first. In normal operation, the backend does not send the offer at all, so the message is not in the Chord thread either. I saw this again in a later test: after the owner added stock, the customer's thread (`partner_YB7LGE…`, while the tools got `customer_ku7VdU…`) had no new message until the customer wrote again. On API threads and on real WhatsApp numbers, the two IDs match, and the backend sends the message.
 
 ### How I worked out the cause
 
@@ -138,18 +142,27 @@ I changed one thing at a time:
 
 Then I looked at the simulator page. It gets its messages from its own `/state` endpoint. That endpoint keeps only the messages that people type in the simulator and the replies to them. It does not read the Chord thread.
 
-To compare the IDs, I put the result of `GET /v1/threads` next to the customer ID that my database stored for the same chat.
+To compare the IDs, I put the result of `GET /v1/threads` next to the customer ID that my database stored for the same chat. Then I looked for any way to connect them:
+
+- I searched all fields of the thread, its turns and its control events for the `customer_…` ID. It is not in any of them.
+- I asked the agent which IDs it can see. It sees only the sender ID: "Thread ID: not visible to me".
+- A chat API reply has the thread ID and the tool arguments together (`thread_id` and `steps[].instruction`), so a `chat.completed` webhook could link the IDs. I registered one. Chord's test delivery arrived, signed. But no `chat.completed` event came, for a simulator turn or for a chat API turn, and the delivery history stayed empty.
+
+On the chat API, the model sees the raw sender ID, which is also the thread's participant ID. On the partner chat API that the simulator uses, the model sees a pseudonym instead. Thus, the problem is only on the partner chat API.
 
 ### How I fixed it or worked around it
 
 The backend still holds the item for the customer and sends the offer immediately. This is correct for a real WhatsApp channel.
+
+To send into the correct simulator thread, the backend links the pseudonym to the thread by timing. While a tool call runs, the customer's thread is the one that waits for the agent's reply: its last turn is the inbound message from a few seconds ago. At each tool call, the backend lists the teammate's threads that wait for a reply. If exactly one simulator thread waits and no other customer has it, the backend links the customer to it. If two threads wait at the same time, it links nothing. Real channels, where the IDs match, do not use this method. In a live test, the offer arrived in the correct thread as an agent turn with `delivery_status: sent`, and an operator can see it in the Chord dashboard. The simulator page still does not show it. An operator message (take-over, send, hand-back) also gets `sent` and also does not appear in the simulator.
 
 In the simulator, the customer gets the offer at their next message. When a customer sends any message, also "hi", the agent first calls the `get_my_updates` tool. If the backend holds an item for the customer, the agent tells them about it first. The skill tells the agent to think that the customer did not see the earlier message.
 
 ### What I would change in Chord
 
 - Make the simulator show the full Chord thread. Then the simulator shows all outbound messages: agent replies, `MESSAGE` tasks and replies from a human operator. Without this change, builders cannot test proactive messages or operator takeover in the review channel.
-- Use one customer ID everywhere. Put the ID that the model sees on the thread object, or put it in `_meta` as problem 1 describes.
+- Use one customer ID everywhere. Put the ID that the model sees on the thread object, or put it in `_meta` as problem 1 describes. If the pseudonym is for privacy, keep it, but add it to the thread so that a builder can find the thread from it.
+- Make the `chat.completed` webhook fire for all chat channels, with `thread_id` and the tool steps. That alone lets a builder link a customer to a thread.
 
 ## 4. The Catalogue has no stock fields
 

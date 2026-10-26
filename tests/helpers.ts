@@ -42,6 +42,8 @@ export function fakePaystack() {
 export function fakeChord() {
   const scheduled: { taskId: string; conversationId: string; body: string; at: Date }[] = [];
   const cancelled: string[] = [];
+  /** Threads the fake reports as waiting for a reply (set by a test). */
+  const waiting: { id: string; participant: string }[] = [];
   let n = 0;
   const client: ChordClient = {
     async scheduleMessage(input) {
@@ -56,10 +58,14 @@ export function fakeChord() {
       cancelled.push(id);
     },
     async findThread(participant) {
-      return `thread-${participant}`;
+      // Simulator pseudonyms never match a thread participant, as on the real partner chat API.
+      return participant.startsWith('customer_') ? null : `thread-${participant}`;
+    },
+    async threadsAwaitingReply() {
+      return [...waiting];
     },
   };
-  return { client, scheduled, cancelled };
+  return { client, scheduled, cancelled, waiting };
 }
 
 export type TestEnv = Awaited<ReturnType<typeof setup>>;

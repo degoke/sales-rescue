@@ -12,6 +12,7 @@ import { confirmPayment, createPaymentLink, prepareCheckout, trackOrder } from '
 import { verifyOwner } from '../merchant/owner.js';
 import { updateInventory } from '../merchant/inventory.js';
 import { addProduct } from '../merchant/catalogue.js';
+import { linkCustomerThread, linkOwnerThread } from '../merchant/thread-link.js';
 import { getDemandSummary } from '../merchant/metrics.js';
 import { manageRestock } from '../merchant/restock.js';
 
@@ -58,6 +59,13 @@ export function buildMcpServer(deps: Deps) {
       try {
         const result = await run(args);
         log('tool_call', { tool: name, ok: true, ms: Date.now() - started, customer_ref: (args as any)?.customer_ref });
+        // Simulator only: remember which thread this customer (or the owner) is in, so the backend's
+        // own messages reach the right thread. Never blocks or fails the tool call.
+        const a = args as { customer_ref?: string; sender_id?: string };
+        const link = name === 'verify_owner' ? linkOwnerThread(deps, a.sender_id) : linkCustomerThread(deps, a.customer_ref);
+        link
+          .then((r) => r?.isNew && log('thread_linked', { tool: name, thread: r.thread }))
+          .catch((e) => log('thread_link_error', { tool: name, error: String(e) }));
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 1) }] };
       } catch (e) {
         if (e instanceof DomainError) {

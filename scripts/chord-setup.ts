@@ -20,7 +20,9 @@ const DEV = process.argv.includes('--dev');
 // changes anything that belongs to the production teammate.
 const INSTANCE = DEV
   ? { state: '.chord-state.dev.json', name: 'sales-rescue-dev', label: 'Flavorburst · Sales Rescue (dev)', lastName: 'Sales Rescue Dev' }
-  : { state: '.chord-state.json', name: 'sales-rescue', label: 'Flavorburst · Sales Rescue', lastName: 'Sales Rescue' };
+  : // Production was recreated as "flavorburst-sales-rescue": the WhatsApp simulator keeps a teammate's
+    // name from when it first saw it, so the original teammate (created as a bag shop) kept its old name.
+    { state: '.chord-state.json', name: 'flavorburst-sales-rescue', label: 'Flavorburst · Sales Rescue', lastName: 'Sales Rescue' };
 const STATE = INSTANCE.state;
 const LOG_DIR = 'docs/setup-log';
 const SKILL_DIR = 'skills/sales-rescue';

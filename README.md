@@ -4,7 +4,7 @@ Sales Rescue is a Chord teammate on WhatsApp. It keeps sales for a small busines
 
 The agent is built and runs on Chord:
 
-- **Teammate:** **Flavorburst · Sales Rescue** (`869ac045-a7af-4eb2-9d0b-52b1b60983ad`). You can talk to it in the Chord WhatsApp simulator.
+- **Teammate:** **Flavorburst · Sales Rescue** (`fd89c683-3ea9-48d6-af39-844759a3dc22`). You can talk to it in the Chord WhatsApp simulator.
 - **Skill files:** [`skills/sales-rescue/`](skills/sales-rescue/). The setup script publishes them to the teammate on Chord.
 - **Tool code:** [`src/`](src/). It is an MCP server with 16 tools ([`src/mcp/server.ts`](src/mcp/server.ts)). Chord calls it over HTTPS. The tools use a Postgres database, Paystack in test mode and a mock courier API.
 

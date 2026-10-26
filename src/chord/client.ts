@@ -10,6 +10,8 @@ export interface ChordClient {
   cancelTask(taskId: string): Promise<void>;
   /** Most recent thread with this teammate whose channel participant is `participant`; null if none. Throws on API errors. */
   findThread(participant: string): Promise<string | null>;
+  /** This teammate's threads whose last turn is an inbound message from the last `withinMs`: threads waiting for a reply. */
+  threadsAwaitingReply(withinMs: number): Promise<{ id: string; participant: string }[]>;
 }
 
 export function createChordClient(opts: {
@@ -66,6 +68,15 @@ export function createChordClient(opts: {
         .filter((t) => t.teammate_id === opts.teammateId && t.channel_participant_id === participant)
         .sort((a, b) => Number(b.last_activity_at ?? b.updated_at ?? 0) - Number(a.last_activity_at ?? a.updated_at ?? 0));
       return match[0]?.id ?? null;
+    },
+    async threadsAwaitingReply(withinMs) {
+      const q = new URLSearchParams({ workspace_id: opts.workspaceId, agent_id: opts.teammateId, limit: '50' });
+      const json = await call('GET', `/v1/threads?${q}`);
+      const threads: any[] = json?.threads ?? [];
+      const since = Date.now() - withinMs;
+      return threads
+        .filter((t) => t.teammate_id === opts.teammateId && t.last_turn_direction === 'inbound' && Number(t.last_turn_at) >= since)
+        .map((t) => ({ id: String(t.id), participant: String(t.channel_participant_id ?? '') }));
     },
   };
 }
